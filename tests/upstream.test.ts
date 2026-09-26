@@ -89,7 +89,7 @@ function githubFetchFixture(
         .find(([, commit]) => commit === sha)?.[0]
       const bytes = version ? tarballs.get(version) : undefined
       return bytes
-        ? new Response(bytes, { status: 200, headers: { "content-length": String(bytes.byteLength) } })
+        ? new Response(new Uint8Array(bytes), { status: 200, headers: { "content-length": String(bytes.byteLength) } })
         : new Response("missing", { status: 404 })
     }
     return new Response("missing", { status: 404 })

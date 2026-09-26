@@ -1,5 +1,5 @@
 {
-  "name": "@rozsazoltan/opencode-caveman",
+  "name": "opencode-caveman",
   "version": "0.1.0",
   "description": "Zero-vendoring OpenCode V2 adapter that assembles Caveman from versioned upstream GitHub source at startup",
   "type": "module",
@@ -7,18 +7,9 @@
   "exports": {
     ".": "./src/index.ts"
   },
-  "files": [
-    "src",
-    "LICENSE",
-    "NOTICE.md",
-    "README.md",
-    "CHANGELOG.md",
-    "package.json"
-  ],
   "scripts": {
-    "test": "node --experimental-strip-types --test tests/*.test.ts",
-    "typecheck": "tsc --noEmit",
-    "prepack": "npm run typecheck && npm test"
+    "test": "bun test tests",
+    "typecheck": "tsc --noEmit"
   },
   "engines": {
     "node": ">=22"

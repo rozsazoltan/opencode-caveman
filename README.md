@@ -1,19 +1,24 @@
-# @rozsazoltan/opencode-caveman
+# opencode-caveman
 
 Thin OpenCode V2 adapter for [JuliusBrussee/caveman](https://github.com/JuliusBrussee/caveman).
 
-Wrapper vendors **zero Caveman source, prompts, skills, agents, commands, rules, hooks, or binaries**.
+Install plugin directly from Git; no npm package publication. Wrapper vendors **zero Caveman source, prompts, skills, agents, commands, rules, hooks, or binaries**.
 Every plugin startup resolves configured Caveman semver range from upstream GitHub repository, pins selected release to immutable commit SHA, and assembles OpenCode integration from that upstream source tree.
 
-## Install
+## Installation
+
+Add plugin to OpenCode configuration using a pinned Git commit:
 
 ```json
 {
   "plugins": [
-    "@rozsazoltan/opencode-caveman"
+    "opencode-caveman@git+https://github.com/rozsazoltan/opencode-caveman.git#<commit>"
   ]
 }
 ```
+
+Replace `<commit>` with commit hash. Release tag can replace hash, for example
+`#v0.1.0`. OpenCode loads TypeScript entrypoint directly; no build step needed.
 
 Default upstream range:
 
@@ -27,7 +32,7 @@ So `2.7.x`, `2.8.0`, `2.9.x` match; `3.0.0` does not.
 
 ```text
 OpenCode startup
-  -> load @rozsazoltan/opencode-caveman
+  -> load opencode-caveman
   -> query JuliusBrussee/caveman releases
   -> select highest stable version matching configured semver range
   -> dereference release tag to commit SHA
@@ -40,7 +45,7 @@ OpenCode startup
   -> run
 ```
 
-No periodic updater. No CI-generated Caveman snapshot. No copied upstream content in npm package.
+No periodic updater. No CI-generated Caveman snapshot. No copied upstream content in repository or install.
 
 Cache exists only to avoid downloading same immutable commit again and to allow offline rollback. Startup still checks upstream every time. If GitHub unavailable, last compatible cache is used and status reports stale cache.
 
@@ -52,7 +57,7 @@ Optional object form:
 {
   "plugins": [
     {
-      "package": "@rozsazoltan/opencode-caveman",
+      "package": "opencode-caveman@git+https://github.com/rozsazoltan/opencode-caveman.git#<commit>",
       "options": {
         "upstreamRange": "^2.7.0",
         "upstreamRepository": "JuliusBrussee/caveman"
@@ -98,7 +103,7 @@ agents/*
 bin/lib/opencode-agent.js
 ```
 
-Full upstream source tree stays in runtime cache, so skill-relative scripts/assets remain available. Wrapper repo/package contains none of them.
+Full upstream source tree stays in runtime cache, so skill-relative scripts/assets remain available. Wrapper repository contains none of them.
 
 ## OpenCode V2 bridge
 
@@ -159,11 +164,10 @@ It does not enable optional Caveman Engine/proxy/MCP/shrink binaries or `caveman
 
 ## Development
 
-```bash
-npm install
-npm run typecheck
-npm test
-npm pack --dry-run
+```sh
+bun install
+bun run typecheck
+bun run test
 ```
 
 No GitHub Actions workflow required for runtime behavior.

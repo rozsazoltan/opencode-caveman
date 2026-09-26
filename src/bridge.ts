@@ -97,10 +97,10 @@ export async function installRuntimeBridge(
   registrations.push(await ctx.skill.transform((editor) => {
     for (const skill of options.getSnapshot().catalog.skills) {
       editor.add({
-        id: skill.id,
-        name: skill.name,
+        id: skill.id as Parameters<typeof editor.add>[0]["id"],
+        name: skill.name as Parameters<typeof editor.add>[0]["name"],
         description: skill.description,
-        location: skill.location,
+        path: skill.location as Parameters<typeof editor.add>[0]["path"],
         content: skill.content,
       })
     }

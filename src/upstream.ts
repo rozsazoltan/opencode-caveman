@@ -321,7 +321,7 @@ async function installRelease(
         if (archiveEntries > MAX_ARCHIVE_ENTRIES) {
           throw new Error(`Caveman archive exceeds ${MAX_ARCHIVE_ENTRIES} entry limit`)
         }
-        if (entry.type === "SymbolicLink" || entry.type === "Link") {
+        if ("type" in entry && (entry.type === "SymbolicLink" || entry.type === "Link")) {
           throw new Error("Caveman archive contains link entry")
         }
         extractedBytes += Number(entry.size ?? 0)
