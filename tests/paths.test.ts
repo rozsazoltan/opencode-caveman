@@ -16,3 +16,10 @@ test("ignores plugin-specific environment overrides", () => {
     join("/home/test", ".cache", "opencode", ".caveman"),
   )
 })
+
+test("uses the home cache instead of LOCALAPPDATA", () => {
+  assert.equal(
+    pluginCacheDirectory(undefined, { LOCALAPPDATA: "C:\\Users\\test\\AppData\\Local" }, "/home/test"),
+    join("/home/test", ".cache", "opencode", ".caveman"),
+  )
+})

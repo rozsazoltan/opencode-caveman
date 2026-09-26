@@ -17,8 +17,5 @@ export function pluginCacheDirectory(
 ): string {
   if (configuredDirectory?.trim()) return configuredDirectory.trim()
   if (env.XDG_CACHE_HOME?.trim()) return join(env.XDG_CACHE_HOME, "opencode", ".caveman")
-  if (process.platform === "win32" && env.LOCALAPPDATA?.trim()) {
-    return join(env.LOCALAPPDATA, "opencode", ".caveman")
-  }
   return join(home, ".cache", "opencode", ".caveman")
 }
