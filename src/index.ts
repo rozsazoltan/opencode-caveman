@@ -25,7 +25,7 @@ function diagnosticLogger(cacheRoot: string): (message: string) => void {
 }
 
 export default Plugin.define({
-  id: "opencode-caveman",
+  id: "caveman-bridge",
   async setup(ctx) {
     const options = resolveOptions(ctx.options)
     const cacheRoot = pluginCacheDirectory()
