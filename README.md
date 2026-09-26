@@ -60,23 +60,17 @@ Optional object form:
       "package": "opencode-caveman@git+https://github.com/rozsazoltan/opencode-caveman.git#<commit>",
       "options": {
         "upstreamRange": "^2.7.0",
-        "upstreamRepository": "JuliusBrussee/caveman"
+        "upstreamRepository": "JuliusBrussee/caveman",
+        "cacheDirectory": "/absolute/path/to/.caveman",
+        "githubToken": "<optional private GitHub token>"
       }
     }
   ]
 }
 ```
 
-Environment overrides:
-
-```text
-OPENCODE_CAVEMAN_VERSION
-OPENCODE_CAVEMAN_REPOSITORY
-OPENCODE_CAVEMAN_CACHE_DIR
-OPENCODE_CAVEMAN_GITHUB_TOKEN
-```
-
-`OPENCODE_CAVEMAN_GITHUB_TOKEN` optional; used only for GitHub API/download requests.
+`cacheDirectory` is optional and must be absolute. Default: `~/.cache/opencode/.caveman/`.
+`githubToken` is optional and used only for GitHub API/download requests. Keep it out of committed/shared config.
 
 ## What comes from upstream
 

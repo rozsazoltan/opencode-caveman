@@ -28,7 +28,7 @@ export default Plugin.define({
   id: "caveman-bridge",
   async setup(ctx) {
     const options = resolveOptions(ctx.options)
-    const cacheRoot = pluginCacheDirectory()
+    const cacheRoot = pluginCacheDirectory(options.cacheDirectory)
     const configRoot = opencodeConfigDirectory()
     const log = diagnosticLogger(cacheRoot)
     const manager = new UpstreamManager({

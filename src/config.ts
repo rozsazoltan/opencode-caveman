@@ -6,6 +6,7 @@ export type PluginOptions = Readonly<Record<string, unknown>>
 export interface ResolvedOptions {
   upstreamRange: string
   upstreamRepository: string
+  cacheDirectory?: string
   githubToken?: string
 }
 
@@ -14,22 +15,11 @@ function stringOption(options: PluginOptions, key: string): string | undefined {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined
 }
 
-export function resolveOptions(
-  options: PluginOptions,
-  env: NodeJS.ProcessEnv = process.env,
-): ResolvedOptions {
+export function resolveOptions(options: PluginOptions): ResolvedOptions {
   return {
-    upstreamRange:
-      stringOption(options, "upstreamRange") ??
-      env.OPENCODE_CAVEMAN_VERSION ??
-      DEFAULT_UPSTREAM_RANGE,
-    upstreamRepository:
-      stringOption(options, "upstreamRepository") ??
-      env.OPENCODE_CAVEMAN_REPOSITORY ??
-      DEFAULT_UPSTREAM_REPOSITORY,
-    githubToken:
-      typeof env.OPENCODE_CAVEMAN_GITHUB_TOKEN === "string" && env.OPENCODE_CAVEMAN_GITHUB_TOKEN.length > 0
-        ? env.OPENCODE_CAVEMAN_GITHUB_TOKEN
-        : undefined,
+    upstreamRange: stringOption(options, "upstreamRange") ?? DEFAULT_UPSTREAM_RANGE,
+    upstreamRepository: stringOption(options, "upstreamRepository") ?? DEFAULT_UPSTREAM_REPOSITORY,
+    cacheDirectory: stringOption(options, "cacheDirectory"),
+    githubToken: stringOption(options, "githubToken"),
   }
 }
