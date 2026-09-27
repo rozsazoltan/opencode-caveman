@@ -2,6 +2,7 @@ import type { Plugin } from "@opencode/plugin"
 import { renderCommand, type UpstreamCatalog } from "./catalog.ts"
 import type { UpstreamInstall } from "./upstream.ts"
 import type { AgentSyncResult } from "./agents.ts"
+import type { IncludeOptions } from "./config.ts"
 
 export type PluginContext = Parameters<NonNullable<Parameters<typeof Plugin.define>[0]["setup"]>>[0]
 
@@ -16,6 +17,7 @@ export interface RuntimeBridgeOptions {
   getSnapshot: () => RuntimeSnapshot
   refresh: () => Promise<RuntimeSnapshot>
   cleanAgents: () => Promise<AgentSyncResult>
+  include: IncludeOptions
   pluginVersion: string
   diagnostic?: (message: string) => void
 }
@@ -62,7 +64,11 @@ async function bridgeSystemHook(catalog: UpstreamCatalog, event: { system: Array
   }
 }
 
-function statusText(snapshot: RuntimeSnapshot, pluginVersion: string): string {
+function statusText(
+  snapshot: RuntimeSnapshot,
+  pluginVersion: string,
+  include: IncludeOptions,
+): string {
   const warning = snapshot.install.warning ? `\nWarning: ${snapshot.install.warning}` : ""
   const skipped = snapshot.agents.skipped.length > 0
     ? `\nAgent sync skipped: ${snapshot.agents.skipped.join("; ")}`
@@ -76,10 +82,22 @@ function statusText(snapshot: RuntimeSnapshot, pluginVersion: string): string {
     `Last GitHub check: ${snapshot.install.checkedAt}`,
     `Using stale cache: ${snapshot.install.stale ? "yes" : "no"}`,
     `Core rules: loaded`,
-    `Skills: ${snapshot.catalog.skills.length}`,
-    `Commands: ${snapshot.catalog.commands.length}`,
-    `Agents synced: ${snapshot.agents.installed}`,
+    `Skills: ${include.skills ? `enabled (${snapshot.catalog.skills.length})` : "disabled"}`,
+    `Commands: ${include.commands ? `enabled (${snapshot.catalog.commands.length} upstream + 3 management)` : "disabled"}`,
+    `Agents: ${include.agents ? `enabled (${snapshot.agents.installed} synced)` : "disabled"}`,
+    `MCP: ${include.mcps ? "enabled" : "disabled"}`,
   ].join("\n") + warning + skipped
+}
+
+interface McpEditor {
+  get(name: string): unknown
+  set(name: string, config: { type: "local"; command: string[] }): void
+}
+
+export function registerCavemanMcp(editor: McpEditor): boolean {
+  if (editor.get("caveman") !== undefined) return false
+  editor.set("caveman", { type: "local", command: ["npx", "-y", "caveman-mcp"] })
+  return true
 }
 
 function sameLocation(ctx: PluginContext, event: any): boolean {
@@ -94,72 +112,82 @@ export async function installRuntimeBridge(
   const registrations: Array<{ dispose(): Promise<void> }> = []
   const controller = new AbortController()
 
-  registrations.push(await ctx.skill.transform((editor) => {
-    for (const skill of options.getSnapshot().catalog.skills) {
-      editor.add({
-        id: skill.id as Parameters<typeof editor.add>[0]["id"],
-        name: skill.name as Parameters<typeof editor.add>[0]["name"],
-        description: skill.description,
-        path: skill.location as Parameters<typeof editor.add>[0]["path"],
-        content: skill.content,
-      })
-    }
-  }))
+  if (options.include.skills) {
+    registrations.push(await ctx.skill.transform((editor) => {
+      for (const skill of options.getSnapshot().catalog.skills) {
+        editor.add({
+          id: skill.id as Parameters<typeof editor.add>[0]["id"],
+          name: skill.name as Parameters<typeof editor.add>[0]["name"],
+          description: skill.description,
+          path: skill.location as Parameters<typeof editor.add>[0]["path"],
+          content: skill.content,
+        })
+      }
+    }))
+  }
 
-  registrations.push(await ctx.command.transform((editor) => {
-    for (const command of options.getSnapshot().catalog.commands) {
+  if (options.include.commands) {
+    registrations.push(await ctx.command.transform((editor) => {
+      for (const command of options.getSnapshot().catalog.commands) {
+        editor.add({
+          name: command.name,
+          ...(command.description ? { description: command.description } : {}),
+          execute: async ({ sessionID, prompt, delivery }) => {
+            await ctx.session.prompt({
+              ...prompt,
+              sessionID,
+              text: renderCommand(command.template, prompt.text),
+              delivery,
+            })
+          },
+        })
+      }
+
       editor.add({
-        name: command.name,
-        ...(command.description ? { description: command.description } : {}),
-        execute: async ({ sessionID, prompt, delivery }) => {
+        name: "caveman-upstream-status",
+        description: "Show OpenCode Caveman and resolved upstream versions",
+        execute: async ({ sessionID }) => {
           await ctx.session.prompt({
-            ...prompt,
             sessionID,
-            text: renderCommand(command.template, prompt.text),
-            delivery,
+            text: statusText(options.getSnapshot(), options.pluginVersion, options.include),
+            resume: false,
           })
         },
       })
-    }
 
-    editor.add({
-      name: "caveman-upstream-status",
-      description: "Show OpenCode Caveman and resolved upstream versions",
-      execute: async ({ sessionID }) => {
-        await ctx.session.prompt({
-          sessionID,
-          text: statusText(options.getSnapshot(), options.pluginVersion),
-          resume: false,
-        })
-      },
-    })
+      editor.add({
+        name: "caveman-upstream-update",
+        description: "Force upstream Caveman version check and refresh",
+        execute: async ({ sessionID }) => {
+          const snapshot = await options.refresh()
+          await ctx.session.prompt({
+            sessionID,
+            text: statusText(snapshot, options.pluginVersion, options.include),
+            resume: false,
+          })
+        },
+      })
 
-    editor.add({
-      name: "caveman-upstream-update",
-      description: "Force upstream Caveman version check and refresh",
-      execute: async ({ sessionID }) => {
-        const snapshot = await options.refresh()
-        await ctx.session.prompt({
-          sessionID,
-          text: statusText(snapshot, options.pluginVersion),
-          resume: false,
-        })
-      },
-    })
+      editor.add({
+        name: "caveman-managed-clean",
+        description: "Remove Caveman agent files managed by this plugin",
+        execute: async ({ sessionID }) => {
+          const result = await options.cleanAgents()
+          await ctx.session.prompt({
+            sessionID,
+            text: `Managed Caveman agents removed: ${result.removed}. Skipped: ${result.skipped.length}.`,
+            resume: false,
+          })
+        },
+      })
+    }))
+  }
 
-    editor.add({
-      name: "caveman-managed-clean",
-      description: "Remove Caveman agent files managed by this plugin",
-      execute: async ({ sessionID }) => {
-        const result = await options.cleanAgents()
-        await ctx.session.prompt({
-          sessionID,
-          text: `Managed Caveman agents removed: ${result.removed}. Skipped: ${result.skipped.length}.`,
-          resume: false,
-        })
-      },
-    })
-  }))
+  if (options.include.mcps) {
+    registrations.push(await ctx.mcp.transform((editor) => {
+      registerCavemanMcp(editor)
+    }))
+  }
 
   registrations.push(await ctx.session.hook("prompt", async (event) => {
     const snapshot = options.getSnapshot()

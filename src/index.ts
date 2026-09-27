@@ -57,13 +57,15 @@ export default Plugin.define({
 
       // OpenCode V2 AgentEditor cannot add new agents. Materialize only upstream-declared
       // agent markdown into OpenCode config, with ownership hashes and collision protection.
-      const agents = syncAgents(
-        install.root,
-        install.version,
-        catalog.agentFiles,
-        configRoot,
-        cacheRoot,
-      )
+      const agents = options.include.agents
+        ? syncAgents(
+          install.root,
+          install.version,
+          catalog.agentFiles,
+          configRoot,
+          cacheRoot,
+        )
+        : removeManagedAgents(cacheRoot)
 
       snapshot = {
         install,
@@ -106,6 +108,7 @@ export default Plugin.define({
       getSnapshot,
       refresh,
       cleanAgents,
+      include: options.include,
       pluginVersion: pluginPackage.version,
       diagnostic: log,
     })

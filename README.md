@@ -61,6 +61,12 @@ Optional object form:
       "options": {
         "upstreamRange": "^2.7.0",
         "upstreamRepository": "JuliusBrussee/caveman",
+        "include": {
+          "agents": true,
+          "commands": true,
+          "mcps": true,
+          "skills": true
+        },
         "cacheDirectory": "/absolute/path/to/.caveman",
         "githubToken": "<optional private GitHub token>"
       }
@@ -71,6 +77,10 @@ Optional object form:
 
 `cacheDirectory` is optional and must be absolute. Default: `~/.cache/opencode/.caveman/`.
 `githubToken` is optional and used only for GitHub API/download requests. Keep it out of committed/shared config.
+
+`include` independently controls upstream agents, commands, MCP, and skills. Every category defaults to `true`; only literal `false` disables a category. For example, set `"mcps": false` to disable only MCP registration. Disabling agents removes unchanged plugin-managed agent files and keeps modified files. `commands: false` also disables plugin management commands (`/caveman-upstream-status`, `/caveman-upstream-update`, and `/caveman-managed-clean`). Hooks and core rules remain active for every setting.
+
+When enabled, MCP registration adds local server `caveman` with command `npx -y caveman-mcp`. OpenCode launches this command through `npx`; package availability at runtime is required and has not been verified. An existing `caveman` MCP server is preserved and never overwritten.
 
 ## What comes from upstream
 
