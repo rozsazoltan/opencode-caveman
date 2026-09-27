@@ -76,7 +76,7 @@ test("registers Caveman MCP from cached upstream source", async () => {
     assert.equal(transforms.includes("mcps"), true)
     assert.deepEqual(servers.get("caveman"), {
       type: "local",
-      command: [process.execPath, join(upstreamRoot, "mcp", "bin", "caveman-mcp.mjs")],
+      command: ["node", join(upstreamRoot, "mcp", "bin", "caveman-mcp.mjs")],
     })
   } finally {
     rmSync(tempRoot, { recursive: true, force: true })

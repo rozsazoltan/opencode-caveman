@@ -115,7 +115,7 @@ export function registerCavemanMcp(
     return false
   }
 
-  editor.set("caveman", { type: "local", command: [process.execPath, launcher] })
+  editor.set("caveman", { type: "local", command: ["node", launcher] })
   return true
 }
 
