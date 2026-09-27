@@ -108,6 +108,7 @@ export default Plugin.define({
       refresh,
       cleanAgents,
       include: options.include,
+      nodeExecutable: options.nodeExecutable,
       pluginVersion: pluginPackage.version,
       diagnostic: log,
     })

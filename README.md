@@ -62,6 +62,7 @@ Optional object form:
       "options": {
         "upstreamRange": "^2.7.0",
         "upstreamRepository": "JuliusBrussee/caveman",
+        "nodeExecutable": "node",
         "include": {
           "agents": true,
           "commands": true,
@@ -76,6 +77,8 @@ Optional object form:
 ```
 
 `cacheDirectory` is optional and must be absolute. Default: `~/.cache/opencode/.caveman/`.
+
+`nodeExecutable` selects executable used to launch cached MCP entrypoint. Default: `node`. Set absolute Node executable path when OpenCode service PATH cannot resolve Node.
 
 `include` independently controls upstream agents, commands, MCP, and skills. Every category defaults to `true`; only literal `false` disables a category. For example, set `"mcps": false` to disable only MCP registration. Disabling agents removes unchanged plugin-managed agent files and keeps modified files. `commands: false` also disables plugin management commands (`/caveman-upstream-status`, `/caveman-upstream-update`, and `/caveman-managed-clean`). Hooks and core rules remain active for every setting.
 
