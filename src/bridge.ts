@@ -1,4 +1,6 @@
 import type { Plugin } from "@opencode/plugin"
+import { existsSync } from "node:fs"
+import { join } from "node:path"
 import { renderCommand, type UpstreamCatalog } from "./catalog.ts"
 import type { UpstreamInstall } from "./upstream.ts"
 import type { AgentSyncResult } from "./agents.ts"
@@ -94,9 +96,26 @@ interface McpEditor {
   set(name: string, config: { type: "local"; command: string[] }): void
 }
 
-export function registerCavemanMcp(editor: McpEditor): boolean {
+export function registerCavemanMcp(
+  editor: McpEditor,
+  upstreamRoot: string,
+  diagnostic?: (message: string) => void,
+): boolean {
   if (editor.get("caveman") !== undefined) return false
-  editor.set("caveman", { type: "local", command: ["npx", "-y", "caveman-mcp"] })
+
+  const launcher = join(upstreamRoot, "mcp", "bin", "caveman-mcp.mjs")
+  const binaryInstaller = join(upstreamRoot, "mcp", "bin", "binary-installer.generated.mjs")
+  const releaseManifest = join(upstreamRoot, "mcp", "bin", "release.generated.mjs")
+  const missing = [launcher, binaryInstaller, releaseManifest].filter((path) => !existsSync(path))
+  if (missing.length > 0) {
+    diagnostic?.(
+      `Caveman MCP registration skipped: cached upstream source is missing ${missing.join(", ")}; ` +
+        "select an upstream release containing these files or set include.mcps to false.",
+    )
+    return false
+  }
+
+  editor.set("caveman", { type: "local", command: [process.execPath, launcher] })
   return true
 }
 
@@ -185,7 +204,7 @@ export async function installRuntimeBridge(
 
   if (options.include.mcps) {
     registrations.push(await ctx.mcp.transform((editor) => {
-      registerCavemanMcp(editor)
+      registerCavemanMcp(editor, options.getSnapshot().install.root, options.diagnostic)
     }))
   }
 

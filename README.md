@@ -42,6 +42,7 @@ OpenCode startup
   -> load upstream OpenCode plugin/hooks/rules
   -> register upstream skills + commands in OpenCode V2
   -> sync upstream-declared Cavecrew agent markdown with ownership protection
+  -> register optional Caveman MCP from same cached upstream source tree
   -> run
 ```
 
@@ -80,7 +81,9 @@ Optional object form:
 
 `include` independently controls upstream agents, commands, MCP, and skills. Every category defaults to `true`; only literal `false` disables a category. For example, set `"mcps": false` to disable only MCP registration. Disabling agents removes unchanged plugin-managed agent files and keeps modified files. `commands: false` also disables plugin management commands (`/caveman-upstream-status`, `/caveman-upstream-update`, and `/caveman-managed-clean`). Hooks and core rules remain active for every setting.
 
-When enabled, MCP registration adds local server `caveman` with command `npx -y caveman-mcp`. OpenCode launches this command through `npx`; package availability at runtime is required and has not been verified. An existing `caveman` MCP server is preserved and never overwritten.
+When enabled, MCP registration adds local server `caveman` using Node to launch `mcp/bin/caveman-mcp.mjs` from the cached, immutable upstream release source. Registration is skipped with a diagnostic if launcher or generated installer files are missing. An existing `caveman` MCP server is preserved and never overwritten. No npm `caveman-mcp` dependency is used.
+
+On first MCP start, upstream launcher downloads matching native binary, verifies signed checksum manifest and SHA-256, then caches binary under `~/.caveman/bin`. Native binary is licensed under BSL-1.1. MCP launcher and installer source come from the same resolved upstream commit as rest of integration.
 
 ## What comes from upstream
 
@@ -164,7 +167,7 @@ Semver auto-follow trusts future upstream releases matching configured range. Us
 
 Wrapper assembles upstream default OpenCode integration: mode/plugin behavior, rules, skills, commands, Cavecrew agents.
 
-It does not enable optional Caveman Engine/proxy/MCP/shrink binaries or `caveman enable opencode`. Those are separate upstream runtime/licensing surfaces.
+It can register optional Caveman MCP when enabled. It does not enable optional Caveman Engine/proxy/shrink binaries or `caveman enable opencode`. Those are separate upstream runtime/licensing surfaces.
 
 ## Development
 
