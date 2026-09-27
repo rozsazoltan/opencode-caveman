@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as tar from "tar"
-import { resolveRelease, UpstreamManager } from "../src/upstream.ts"
+import { resolveRelease, UpstreamManager, type GitTagRunner } from "../src/upstream.ts"
 
 const commits: Record<string, string> = {
   "2.7.0": "1111111111111111111111111111111111111111",
@@ -12,46 +12,18 @@ const commits: Record<string, string> = {
   "3.0.0": "3333333333333333333333333333333333333333",
 }
 
-function releaseList(versions: string[]) {
-  return versions.map((version) => ({
-    tag_name: `v${version}`,
-    draft: false,
-    prerelease: version.includes("-"),
-  }))
+const repositoryUrl = "https://github.com/JuliusBrussee/caveman.git"
+
+function gitTagListing(
+  versions: string[],
+  commitOverride: Partial<Record<string, string>> = {},
+): string {
+  return versions.map((version) => {
+    const commit = commitOverride[version] ?? commits[version]
+    assert.ok(commit, `missing fixture commit for ${version}`)
+    return `${commit}\trefs/tags/v${version}`
+  }).join("\n") + "\n"
 }
-
-test("^2.7.0 resolves highest stable 2.x GitHub release and pins commit", async () => {
-  const fakeFetch: typeof fetch = async (input) => {
-    const url = String(input)
-    if (url.includes("/releases?")) {
-      return new Response(JSON.stringify([
-        ...releaseList(["2.7.0", "2.8.0", "2.9.0-beta.1", "3.0.0"]),
-        { tag_name: "bin-v1.1.7", draft: false, prerelease: false },
-      ]), { status: 200 })
-    }
-    if (url.includes("/git/ref/tags/v2.8.0")) {
-      return new Response(JSON.stringify({
-        object: { type: "tag", sha: "4444444444444444444444444444444444444444" },
-      }), { status: 200 })
-    }
-    if (url.includes("/git/tags/4444444444444444444444444444444444444444")) {
-      return new Response(JSON.stringify({
-        object: { type: "commit", sha: commits["2.8.0"] },
-      }), { status: 200 })
-    }
-    return new Response("missing", { status: 404 })
-  }
-
-  const release = await resolveRelease(
-    "^2.7.0",
-    "JuliusBrussee/caveman",
-    fakeFetch,
-  )
-  assert.equal(release.version, "2.8.0")
-  assert.equal(release.tag, "v2.8.0")
-  assert.equal(release.commit, commits["2.8.0"])
-  assert.equal(release.tarball, `https://api.github.com/repos/JuliusBrussee/caveman/tarball/${commits["2.8.0"]}`)
-})
 
 async function packageTarball(version: string): Promise<Buffer> {
   const root = mkdtempSync(join(tmpdir(), `opencode-caveman-${version}-`))
@@ -66,50 +38,72 @@ async function packageTarball(version: string): Promise<Buffer> {
   return readFileSync(archive)
 }
 
-function githubFetchFixture(
+function upstreamFixture(
   tarballs: Map<string, Buffer>,
   getAvailable: () => string[],
-  commitOverride: Partial<Record<string, string>> = {},
-): typeof fetch {
-  return async (input) => {
+  getCommitOverride: () => Partial<Record<string, string>> = () => ({}),
+): { fetchImpl: typeof fetch; gitTagRunner: GitTagRunner } {
+  const fetchImpl: typeof fetch = async (input) => {
     const url = String(input)
-    if (url.includes("/releases?")) {
-      return new Response(JSON.stringify(releaseList(getAvailable())), { status: 200 })
+    const sha = /\/tar\.gz\/([0-9a-f]{40,64})$/i.exec(url)?.[1]
+    if (!url.startsWith("https://codeload.github.com/") || !sha) {
+      return new Response("unexpected URL", { status: 404 })
     }
-    const tag = /\/git\/ref\/tags\/v([^/?]+)/.exec(url)?.[1]
-    if (tag) {
-      const sha = commitOverride[tag] ?? commits[tag]
-      return sha
-        ? new Response(JSON.stringify({ object: { type: "commit", sha } }), { status: 200 })
-        : new Response("missing", { status: 404 })
-    }
-    const sha = /\/tarball\/([0-9a-f]{40,64})$/i.exec(url)?.[1]
-    if (sha) {
-      const version = Object.entries({ ...commits, ...commitOverride })
-        .find(([, commit]) => commit === sha)?.[0]
-      const bytes = version ? tarballs.get(version) : undefined
-      return bytes
-        ? new Response(new Uint8Array(bytes), { status: 200, headers: { "content-length": String(bytes.byteLength) } })
-        : new Response("missing", { status: 404 })
-    }
-    return new Response("missing", { status: 404 })
+    const commitOverride = getCommitOverride()
+    const version = Object.entries({ ...commits, ...commitOverride })
+      .find(([, commit]) => commit === sha)?.[0]
+    const bytes = version ? tarballs.get(version) : undefined
+    return bytes
+      ? new Response(new Uint8Array(bytes), { status: 200, headers: { "content-length": String(bytes.byteLength) } })
+      : new Response("missing", { status: 404 })
   }
+  const gitTagRunner: GitTagRunner = async (url) => {
+    assert.equal(url, repositoryUrl)
+    return gitTagListing(getAvailable(), getCommitOverride())
+  }
+  return { fetchImpl, gitTagRunner }
 }
 
-test("keeps last compatible cache when newer matching release fails adapter validation", async () => {
+test("resolves highest stable matching Git tag and pins annotated or lightweight commit", async () => {
+  const annotatedTagObject = "4444444444444444444444444444444444444444"
+  const peeledCommit = commits["2.8.0"]!
+  const output = [
+    `${commits["2.7.0"]}\trefs/tags/v2.7.0`,
+    `${annotatedTagObject}\trefs/tags/v2.8.0`,
+    `${peeledCommit}\trefs/tags/v2.8.0^{}`,
+    `5555555555555555555555555555555555555555\trefs/tags/v2.9.0-beta.1`,
+    `${commits["3.0.0"]}\trefs/tags/v3.0.0`,
+    `${commits["2.7.0"]}\trefs/tags/bin-v1.1.7`,
+  ].join("\n")
+  const release = await resolveRelease("^2.7.0", "JuliusBrussee/caveman", async (url) => {
+    assert.equal(url, repositoryUrl)
+    return output
+  })
+
+  assert.equal(release.version, "2.8.0")
+  assert.equal(release.tag, "v2.8.0")
+  assert.equal(release.commit, peeledCommit)
+  assert.equal(release.tarball, `https://codeload.github.com/JuliusBrussee/caveman/tar.gz/${peeledCommit}`)
+
+  const lightweight = await resolveRelease("2.7.0", "JuliusBrussee/caveman", async () =>
+    `${commits["2.7.0"]}\trefs/tags/v2.7.0\n`)
+  assert.equal(lightweight.commit, commits["2.7.0"])
+})
+
+test("keeps last compatible cache when newer matching tag fails adapter validation", async () => {
   const cacheRoot = mkdtempSync(join(tmpdir(), "opencode-caveman-cache-"))
   const tarballs = new Map<string, Buffer>([
     ["2.7.0", await packageTarball("2.7.0")],
     ["2.8.0", await packageTarball("2.8.0")],
   ])
   let available = ["2.7.0"]
-  const fakeFetch = githubFetchFixture(tarballs, () => available)
+  const fixture = upstreamFixture(tarballs, () => available)
 
   const manager = new UpstreamManager({
     range: "^2.7.0",
     repository: "JuliusBrussee/caveman",
     cacheRoot,
-    fetchImpl: fakeFetch,
+    ...fixture,
   })
 
   const first = await manager.ensure(async (_root, version) => {
@@ -128,25 +122,53 @@ test("keeps last compatible cache when newer matching release fails adapter vali
   assert.match(second.warning ?? "", /2\.8\.0 adapter compatibility check failed/)
 })
 
+test("uses stale compatible cache when Git tag lookup fails", async () => {
+  const cacheRoot = mkdtempSync(join(tmpdir(), "opencode-caveman-cache-git-failure-"))
+  const tarballs = new Map<string, Buffer>([["2.7.0", await packageTarball("2.7.0")]])
+  const fixture = upstreamFixture(tarballs, () => ["2.7.0"])
+  let failLookup = false
+  const gitTagRunner: GitTagRunner = async (url) => {
+    if (failLookup) throw new Error("simulated Git transport failure")
+    return fixture.gitTagRunner(url)
+  }
+  const manager = new UpstreamManager({
+    range: "^2.7.0",
+    repository: "JuliusBrussee/caveman",
+    cacheRoot,
+    fetchImpl: fixture.fetchImpl,
+    gitTagRunner,
+  })
+
+  const first = await manager.ensure()
+  failLookup = true
+  const second = await manager.ensure()
+
+  assert.equal(second.version, first.version)
+  assert.equal(second.root, first.root)
+  assert.equal(second.stale, true)
+  assert.match(second.warning ?? "", /simulated Git transport failure/)
+})
+
 test("revalidates cache and checks upstream on every startup", async () => {
   const cacheRoot = mkdtempSync(join(tmpdir(), "opencode-caveman-cache-revalidate-"))
   const tarballs = new Map<string, Buffer>([["2.7.0", await packageTarball("2.7.0")]])
-  let releaseCalls = 0
-  const baseFetch = githubFetchFixture(tarballs, () => ["2.7.0"])
-  const fakeFetch: typeof fetch = async (input, init) => {
-    if (String(input).includes("/releases?")) releaseCalls++
-    return baseFetch(input, init)
+  let gitCalls = 0
+  const fixture = upstreamFixture(tarballs, () => ["2.7.0"])
+  const gitTagRunner: GitTagRunner = async (url) => {
+    gitCalls++
+    return fixture.gitTagRunner(url)
   }
 
   const manager = new UpstreamManager({
     range: "^2.7.0",
     repository: "JuliusBrussee/caveman",
     cacheRoot,
-    fetchImpl: fakeFetch,
+    fetchImpl: fixture.fetchImpl,
+    gitTagRunner,
   })
 
   await manager.ensure(async () => undefined)
-  assert.equal(releaseCalls, 1)
+  assert.equal(gitCalls, 1)
 
   await assert.rejects(
     manager.ensure(async () => {
@@ -154,28 +176,22 @@ test("revalidates cache and checks upstream on every startup", async () => {
     }),
     /Cached Caveman 2\.7\.0 is incompatible.*adapter compatibility check failed.*wrapper contract changed/,
   )
-  assert.equal(releaseCalls, 2, "startup must resolve upstream even when cache exists")
+  assert.equal(gitCalls, 2, "startup must resolve upstream even when cache exists")
 })
 
-test("refuses silent replacement when an existing release tag moves", async () => {
+test("refuses silent replacement when an existing tag moves", async () => {
   const cacheRoot = mkdtempSync(join(tmpdir(), "opencode-caveman-cache-tag-move-"))
   const tarballs = new Map<string, Buffer>([["2.7.0", await packageTarball("2.7.0")]])
   let moved = false
   const movedCommit = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-  const fakeFetch: typeof fetch = async (input, init) => {
-    const fixture = githubFetchFixture(
-      tarballs,
-      () => ["2.7.0"],
-      moved ? { "2.7.0": movedCommit } : {},
-    )
-    return fixture(input, init)
-  }
+  const fixture = upstreamFixture(tarballs, () => ["2.7.0"], () =>
+    moved ? { "2.7.0": movedCommit } : {})
 
   const manager = new UpstreamManager({
     range: "^2.7.0",
     repository: "JuliusBrussee/caveman",
     cacheRoot,
-    fetchImpl: fakeFetch,
+    ...fixture,
   })
 
   await manager.ensure(async () => undefined)
@@ -185,5 +201,5 @@ test("refuses silent replacement when an existing release tag moves", async () =
   assert.equal(second.version, "2.7.0")
   assert.equal(second.commit, commits["2.7.0"])
   assert.equal(second.stale, true)
-  assert.match(second.warning ?? "", /release tag v2\.7\.0 moved/)
+  assert.match(second.warning ?? "", /Git tag v2\.7\.0 moved/)
 })

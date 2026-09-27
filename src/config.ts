@@ -14,7 +14,6 @@ export interface ResolvedOptions {
   upstreamRange: string
   upstreamRepository: string
   cacheDirectory?: string
-  githubToken?: string
   include: IncludeOptions
 }
 
@@ -42,7 +41,6 @@ export function resolveOptions(options: PluginOptions): ResolvedOptions {
     upstreamRange: stringOption(options, "upstreamRange") ?? DEFAULT_UPSTREAM_RANGE,
     upstreamRepository: stringOption(options, "upstreamRepository") ?? DEFAULT_UPSTREAM_REPOSITORY,
     cacheDirectory: stringOption(options, "cacheDirectory"),
-    githubToken: stringOption(options, "githubToken"),
     include: includeOptions(options),
   }
 }

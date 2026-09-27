@@ -35,7 +35,6 @@ export default Plugin.define({
       range: options.upstreamRange,
       repository: options.upstreamRepository,
       cacheRoot,
-      githubToken: options.githubToken,
     })
 
     let snapshot: RuntimeSnapshot | undefined

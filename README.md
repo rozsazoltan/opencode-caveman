@@ -3,7 +3,7 @@
 Thin OpenCode V2 adapter for [JuliusBrussee/caveman](https://github.com/JuliusBrussee/caveman).
 
 Install plugin directly from Git; no npm package publication. Wrapper vendors **zero Caveman source, prompts, skills, agents, commands, rules, hooks, or binaries**.
-Every plugin startup resolves configured Caveman semver range from upstream GitHub repository, pins selected release to immutable commit SHA, and assembles OpenCode integration from that upstream source tree.
+Every plugin startup discovers upstream Git tags with Git, selects configured Caveman semver range, pins selected tag to immutable commit SHA, and assembles OpenCode integration from that source tree.
 
 ## Installation
 
@@ -33,10 +33,10 @@ So `2.7.x`, `2.8.0`, `2.9.x` match; `3.0.0` does not.
 ```text
 OpenCode startup
   -> load opencode-caveman
-  -> query JuliusBrussee/caveman releases
+  -> list JuliusBrussee/caveman tags with `git ls-remote`
   -> select highest stable version matching configured semver range
-  -> dereference release tag to commit SHA
-  -> reuse matching immutable upstream cache or download commit archive
+  -> use peeled commit SHA for annotated tags, direct SHA for lightweight tags
+  -> reuse matching immutable upstream cache or download commit archive from codeload.github.com
   -> validate upstream package + OpenCode installer contract
   -> read OpenCode payload lists from upstream bin/install.js
   -> load upstream OpenCode plugin/hooks/rules
@@ -48,7 +48,7 @@ OpenCode startup
 
 No periodic updater. No CI-generated Caveman snapshot. No copied upstream content in repository or install.
 
-Cache exists only to avoid downloading same immutable commit again and to allow offline rollback. Startup still checks upstream every time. If GitHub unavailable, last compatible cache is used and status reports stale cache.
+Git must be installed. Version discovery uses Git transport, not GitHub REST API. Cache avoids downloading same immutable commit again and allows offline rollback. Startup still checks upstream tags every time. If Git tag lookup or codeload archive download fails, last compatible cache is used and status reports stale cache.
 
 ## Configuration
 
@@ -68,8 +68,7 @@ Optional object form:
           "mcps": true,
           "skills": true
         },
-        "cacheDirectory": "/absolute/path/to/.caveman",
-        "githubToken": "<optional private GitHub token>"
+        "cacheDirectory": "/absolute/path/to/.caveman"
       }
     }
   ]
@@ -77,7 +76,6 @@ Optional object form:
 ```
 
 `cacheDirectory` is optional and must be absolute. Default: `~/.cache/opencode/.caveman/`.
-`githubToken` is optional and used only for GitHub API/download requests. Keep it out of committed/shared config.
 
 `include` independently controls upstream agents, commands, MCP, and skills. Every category defaults to `true`; only literal `false` disables a category. For example, set `"mcps": false` to disable only MCP registration. Disabling agents removes unchanged plugin-managed agent files and keeps modified files. `commands: false` also disables plugin management commands (`/caveman-upstream-status`, `/caveman-upstream-update`, and `/caveman-managed-clean`). Hooks and core rules remain active for every setting.
 
@@ -149,11 +147,11 @@ Cache contains upstream source trees keyed by semantic version + commit SHA. Thi
 
 ## Safety / compatibility
 
-- stable GitHub releases only
+- stable Git tags only
 - configured semver range enforced
-- release tag dereferenced to commit SHA
+- tags resolved to commit SHAs (annotated tags peeled)
 - archive downloaded by immutable commit SHA
-- active semantic-version tag move rejected
+- active semantic-version Git tag move rejected
 - archive size, extraction ratio, entry count, extracted size, symlink/hardlink guards
 - package identity/version validated
 - adapter contract validated before activation

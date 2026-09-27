@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto"
+import { execFile } from "node:child_process"
 import {
   existsSync,
   lstatSync,
@@ -11,37 +12,17 @@ import {
   writeFileSync,
 } from "node:fs"
 import { join } from "node:path"
-import { lt, maxSatisfying, satisfies, valid, validRange } from "semver"
+import { lt, maxSatisfying, prerelease, satisfies, valid, validRange } from "semver"
 import * as tar from "tar"
 import { readJsonFile, writeJsonFile } from "./fs.ts"
 
 const UPSTREAM_PACKAGE = "caveman-installer"
-const GITHUB_API = "https://api.github.com"
-const MAX_RELEASE_PAGES = 10
-const RELEASES_PER_PAGE = 100
 const MAX_TARBALL_BYTES = 128 * 1024 * 1024
 const MAX_EXTRACTED_BYTES = 256 * 1024 * 1024
 const MAX_ARCHIVE_ENTRIES = 20_000
 const NETWORK_TIMEOUT_MS = 30_000
-
-interface GitHubRelease {
-  tag_name?: string
-  draft?: boolean
-  prerelease?: boolean
-}
-
-interface GitHubObjectRef {
-  type?: string
-  sha?: string
-}
-
-interface GitHubRefResponse {
-  object?: GitHubObjectRef
-}
-
-interface GitHubTagResponse {
-  object?: GitHubObjectRef
-}
+const MAX_GIT_OUTPUT_BYTES = 8 * 1024 * 1024
+const OBJECT_SHA_PATTERN = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i
 
 interface CacheState {
   range: string
@@ -73,10 +54,12 @@ export interface UpstreamManagerOptions {
   range: string
   repository: string
   cacheRoot: string
-  githubToken?: string
   now?: () => Date
   fetchImpl?: typeof fetch
+  gitTagRunner?: GitTagRunner
 }
+
+export type GitTagRunner = (repositoryUrl: string) => Promise<string>
 
 export type UpstreamValidator = (root: string, version: string) => Promise<void>
 
@@ -99,15 +82,6 @@ function parseRepository(repository: string): { owner: string; repo: string } {
   return { owner: match[1]!, repo: match[2]! }
 }
 
-function githubHeaders(token?: string): HeadersInit {
-  return {
-    Accept: "application/vnd.github+json",
-    "X-GitHub-Api-Version": "2022-11-28",
-    "User-Agent": "opencode-caveman",
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  }
-}
-
 async function fetchWithTimeout(
   fetchImpl: typeof fetch,
   input: string,
@@ -122,77 +96,72 @@ async function fetchWithTimeout(
   }
 }
 
-async function fetchGitHubJson<T>(
-  fetchImpl: typeof fetch,
-  url: string,
-  token?: string,
-): Promise<T> {
-  const response = await fetchWithTimeout(fetchImpl, url, { headers: githubHeaders(token) })
-  if (!response.ok) {
-    const remaining = response.headers.get("x-ratelimit-remaining")
-    const suffix = remaining === "0" ? " (GitHub API rate limit exhausted)" : ""
-    throw new Error(`Caveman GitHub lookup failed: HTTP ${response.status}${suffix}`)
-  }
-  return await response.json() as T
+async function runGitLsRemote(repositoryUrl: string): Promise<string> {
+  return await new Promise((resolve, reject) => {
+    execFile(
+      "git",
+      ["ls-remote", "--tags", "--", repositoryUrl],
+      {
+        encoding: "utf8",
+        timeout: NETWORK_TIMEOUT_MS,
+        maxBuffer: MAX_GIT_OUTPUT_BYTES,
+      },
+      (error, stdout) => {
+        if (error) {
+          const code = "code" in error && typeof error.code === "string" ? ` (${error.code})` : ""
+          reject(new Error(`Caveman Git tag lookup failed${code}`))
+          return
+        }
+        resolve(stdout)
+      },
+    )
+  })
 }
 
-async function resolveTagCommit(
-  repository: string,
-  tag: string,
-  fetchImpl: typeof fetch,
-  token?: string,
-): Promise<string> {
-  const { owner, repo } = parseRepository(repository)
-  const refUrl = `${GITHUB_API}/repos/${owner}/${repo}/git/ref/tags/${encodeURIComponent(tag)}`
-  const ref = await fetchGitHubJson<GitHubRefResponse>(fetchImpl, refUrl, token)
-  let object = ref.object
-
-  for (let depth = 0; depth < 5 && object?.type === "tag"; depth++) {
-    if (!object.sha || !/^[0-9a-f]{40,64}$/i.test(object.sha)) {
-      throw new Error(`Caveman release ${tag} has invalid annotated-tag object`)
+function parseRemoteTags(output: string): Map<string, { sha: string; peeled?: string }> {
+  const tags = new Map<string, { sha: string; peeled?: string }>()
+  for (const line of output.split(/\r?\n/)) {
+    if (!line) continue
+    const match = /^([^\s]+)\s+(refs\/tags\/.+)$/.exec(line)
+    if (!match || !OBJECT_SHA_PATTERN.test(match[1]!)) {
+      throw new Error("Caveman Git tag listing is invalid")
     }
-    const tagUrl = `${GITHUB_API}/repos/${owner}/${repo}/git/tags/${object.sha}`
-    const annotated = await fetchGitHubJson<GitHubTagResponse>(fetchImpl, tagUrl, token)
-    object = annotated.object
-  }
 
-  if (object?.type !== "commit" || !object.sha || !/^[0-9a-f]{40,64}$/i.test(object.sha)) {
-    throw new Error(`Caveman release ${tag} does not resolve to a commit`)
+    const sha = match[1]!.toLowerCase()
+    const rawRef = match[2]!
+    const peeled = rawRef.endsWith("^{}")
+    const tagRef = rawRef.slice("refs/tags/".length)
+    const tag = peeled ? tagRef.slice(0, -3) : tagRef
+    if (!tag) throw new Error("Caveman Git tag listing is invalid")
+
+    const current = tags.get(tag) ?? { sha }
+    if (peeled) current.peeled = sha
+    else current.sha = sha
+    tags.set(tag, current)
   }
-  return object.sha.toLowerCase()
+  return tags
 }
 
 export async function resolveRelease(
   range: string,
   repository: string,
-  fetchImpl: typeof fetch,
-  githubToken?: string,
+  gitTagRunner: GitTagRunner = runGitLsRemote,
 ): Promise<ResolvedRelease> {
   if (validRange(range) === null) throw new Error(`Invalid Caveman semver range: ${range}`)
   const { owner, repo } = parseRepository(repository)
-
-  const byVersion = new Map<string, string>()
-  for (let page = 1; page <= MAX_RELEASE_PAGES; page++) {
-    const url = `${GITHUB_API}/repos/${owner}/${repo}/releases?per_page=${RELEASES_PER_PAGE}&page=${page}`
-    const releases = await fetchGitHubJson<GitHubRelease[]>(fetchImpl, url, githubToken)
-    if (!Array.isArray(releases)) throw new Error("Caveman GitHub releases response is invalid")
-
-    for (const release of releases) {
-      if (release.draft || release.prerelease || typeof release.tag_name !== "string") continue
-      const version = valid(release.tag_name)
-      if (version && !byVersion.has(version)) byVersion.set(version, release.tag_name)
-    }
-    if (releases.length < RELEASES_PER_PAGE) break
-    if (page === MAX_RELEASE_PAGES) {
-      throw new Error(`Caveman release scan exceeded ${MAX_RELEASE_PAGES * RELEASES_PER_PAGE} releases`)
-    }
+  const remoteTags = parseRemoteTags(await gitTagRunner(`https://github.com/${owner}/${repo}.git`))
+  const byVersion = new Map<string, { tag: string; commit: string }>()
+  for (const [tag, refs] of remoteTags) {
+    const version = valid(tag)
+    if (!version || prerelease(version) !== null || byVersion.has(version)) continue
+    const commit = refs.peeled ?? refs.sha
+    byVersion.set(version, { tag, commit })
   }
 
   const version = maxSatisfying([...byVersion.keys()], range, { includePrerelease: false })
-  if (version === null) throw new Error(`No Caveman GitHub release satisfies ${range}`)
-  const tag = byVersion.get(version)!
-  const commit = await resolveTagCommit(repository, tag, fetchImpl, githubToken)
-  const tarball = `${GITHUB_API}/repos/${owner}/${repo}/tarball/${commit}`
+  if (version === null) throw new Error(`No Caveman Git tag satisfies ${range}`)
+  const { tag, commit } = byVersion.get(version)!
+  const tarball = `https://codeload.github.com/${owner}/${repo}/tar.gz/${commit}`
 
   return {
     version,
@@ -206,11 +175,8 @@ export async function resolveRelease(
 async function downloadTarball(
   release: ResolvedRelease,
   fetchImpl: typeof fetch,
-  githubToken?: string,
 ): Promise<{ buffer: Buffer; sha256: string }> {
-  const response = await fetchWithTimeout(fetchImpl, release.tarball, {
-    headers: githubHeaders(githubToken),
-  })
+  const response = await fetchWithTimeout(fetchImpl, release.tarball)
   if (!response.ok) throw new Error(`Caveman source archive download failed: HTTP ${response.status}`)
 
   const declaredLength = Number(response.headers.get("content-length") ?? "0")
@@ -293,7 +259,6 @@ async function installRelease(
   release: ResolvedRelease,
   versionsRoot: string,
   fetchImpl: typeof fetch,
-  githubToken?: string,
 ): Promise<InstalledRelease> {
   const finalRoot = versionRoot(versionsRoot, release.version, release.commit)
   if (validCachedRoot(finalRoot, release.version)) return { root: finalRoot }
@@ -305,7 +270,7 @@ async function installRelease(
   mkdirSync(extracted, { recursive: true })
 
   try {
-    const downloaded = await downloadTarball(release, fetchImpl, githubToken)
+    const downloaded = await downloadTarball(release, fetchImpl)
     writeFileSync(archive, downloaded.buffer, { mode: 0o600 })
     let extractedBytes = 0
     let archiveEntries = 0
@@ -364,6 +329,7 @@ export class UpstreamManager {
   private readonly versionsRoot: string
   private readonly now: () => Date
   private readonly fetchImpl: typeof fetch
+  private readonly gitTagRunner: GitTagRunner
   private inFlight?: Promise<UpstreamInstall>
 
   constructor(private readonly options: UpstreamManagerOptions) {
@@ -372,6 +338,7 @@ export class UpstreamManager {
     this.versionsRoot = join(options.cacheRoot, "versions")
     this.now = options.now ?? (() => new Date())
     this.fetchImpl = options.fetchImpl ?? fetch
+    this.gitTagRunner = options.gitTagRunner ?? runGitLsRemote
   }
 
   ensure(validate?: UpstreamValidator): Promise<UpstreamInstall> {
@@ -387,7 +354,7 @@ export class UpstreamManager {
     if (!state) return undefined
     if (state.range !== this.options.range || state.repository !== this.options.repository) return undefined
     if (!satisfies(state.version, this.options.range, { includePrerelease: false })) return undefined
-    if (!/^[0-9a-f]{40,64}$/i.test(state.commit)) return undefined
+    if (!OBJECT_SHA_PATTERN.test(state.commit)) return undefined
     const root = versionRoot(this.versionsRoot, state.version, state.commit)
     return validCachedRoot(root, state.version) ? { root, state } : undefined
   }
@@ -438,26 +405,25 @@ export class UpstreamManager {
       const release = await resolveRelease(
         this.options.range,
         this.options.repository,
-        this.fetchImpl,
-        this.options.githubToken,
+        this.gitTagRunner,
       )
       const checkedAt = this.now().toISOString()
 
-      // Release tags are expected to be immutable. Same semantic version moving
+      // Git tags are expected to be immutable. Same semantic version moving
       // to another commit is suspicious; keep known cache and surface warning.
       if (cached && release.version === cached.state.version && release.commit !== cached.state.commit) {
         throw new Error(
-          `Caveman release tag ${release.tag} moved from ${cached.state.commit} to ${release.commit}; refusing silent replacement`,
+          `Caveman Git tag ${release.tag} moved from ${cached.state.commit} to ${release.commit}; refusing silent replacement`,
         )
       }
 
-      // Never downgrade compatible cache because remote release listing became incomplete.
+      // Never downgrade compatible cache because remote tag listing became incomplete.
       if (cached && lt(release.version, cached.state.version)) {
         const state: CacheState = { ...cached.state, checkedAt }
         writeJsonFile(this.statePath, state)
         return this.cachedInstall({ root: cached.root, state }, {
           checkedAt,
-          warning: `GitHub resolved older Caveman ${release.version}; keeping cached ${cached.state.version}`,
+          warning: `Git resolved older Caveman ${release.version}; keeping cached ${cached.state.version}`,
         })
       }
 
@@ -465,7 +431,6 @@ export class UpstreamManager {
         release,
         this.versionsRoot,
         this.fetchImpl,
-        this.options.githubToken,
       )
       if (validate) {
         try {

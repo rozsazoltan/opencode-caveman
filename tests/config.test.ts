@@ -25,12 +25,10 @@ test("uses only configured overrides", () => {
     upstreamRange: "~2.8.0",
     upstreamRepository: "example/caveman",
     cacheDirectory: "/tmp/caveman-cache",
-    githubToken: "test-token",
   })
   assert.equal(configured.upstreamRange, "~2.8.0")
   assert.equal(configured.upstreamRepository, "example/caveman")
   assert.equal(configured.cacheDirectory, "/tmp/caveman-cache")
-  assert.equal(configured.githubToken, "test-token")
 })
 
 test("independently disables only categories set to false", () => {
