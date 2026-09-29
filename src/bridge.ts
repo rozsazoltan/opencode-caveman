@@ -4,7 +4,8 @@ import { join } from "node:path"
 import { renderCommand, type UpstreamCatalog } from "./catalog.ts"
 import type { UpstreamInstall } from "./upstream.ts"
 import type { AgentSyncResult } from "./agents.ts"
-import { DEFAULT_NODE_EXECUTABLE, type IncludeOptions, type NodeExecutable } from "./config.ts"
+import { type IncludeOptions, type NodeExecutable } from "./config.ts"
+import { createRuntimeSelector, type RuntimeProbe, type RuntimeSelector } from "./runtime.ts"
 
 export type PluginContext = Parameters<NonNullable<Parameters<typeof Plugin.define>[0]["setup"]>>[0]
 
@@ -20,7 +21,8 @@ export interface RuntimeBridgeOptions {
   refresh: () => Promise<RuntimeSnapshot>
   cleanAgents: () => Promise<AgentSyncResult>
   include: IncludeOptions
-  nodeExecutable: NodeExecutable
+  nodeExecutable?: NodeExecutable
+  probeRuntime?: RuntimeProbe
   pluginVersion: string
   diagnostic?: (message: string) => void
 }
@@ -101,7 +103,8 @@ export function registerCavemanMcp(
   editor: McpEditor,
   upstreamRoot: string,
   diagnostic?: (message: string) => void,
-  nodeExecutable: NodeExecutable = DEFAULT_NODE_EXECUTABLE,
+  nodeExecutable?: NodeExecutable,
+  resolveRuntime: RuntimeSelector = createRuntimeSelector(),
 ): boolean {
   if (editor.get("caveman") !== undefined) return false
 
@@ -117,7 +120,16 @@ export function registerCavemanMcp(
     return false
   }
 
-  const nodeCommandPrefix = typeof nodeExecutable === "string" ? [nodeExecutable] : nodeExecutable
+  const executable = nodeExecutable ?? resolveRuntime()
+  if (!executable) {
+    diagnostic?.(
+      "Caveman MCP registration skipped: neither Node.js nor Bun is available on the OpenCode server PATH. " +
+        "Install Node.js 22+ or Bun, or set nodeExecutable explicitly.",
+    )
+    return false
+  }
+
+  const nodeCommandPrefix = typeof executable === "string" ? [executable] : executable
   editor.set("caveman", { type: "local", command: [...nodeCommandPrefix, launcher] })
   return true
 }
@@ -133,6 +145,7 @@ export async function installRuntimeBridge(
 ): Promise<() => Promise<void>> {
   const registrations: Array<{ dispose(): Promise<void> }> = []
   const controller = new AbortController()
+  const resolveRuntime = createRuntimeSelector(options.probeRuntime)
 
   if (options.include.skills) {
     registrations.push(await ctx.skill.transform((editor) => {
@@ -212,6 +225,7 @@ export async function installRuntimeBridge(
         options.getSnapshot().install.root,
         options.diagnostic,
         options.nodeExecutable,
+        resolveRuntime,
       )
     }))
   }

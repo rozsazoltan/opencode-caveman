@@ -1,7 +1,6 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import {
-  DEFAULT_NODE_EXECUTABLE,
   DEFAULT_UPSTREAM_RANGE,
   DEFAULT_UPSTREAM_REPOSITORY,
   resolveOptions,
@@ -13,8 +12,7 @@ test("uses semver-tracked upstream defaults", () => {
   assert.equal(options.upstreamRange, "^2.7.0")
   assert.equal(options.upstreamRepository, DEFAULT_UPSTREAM_REPOSITORY)
   assert.equal(options.upstreamRepository, "JuliusBrussee/caveman")
-  assert.equal(options.nodeExecutable, DEFAULT_NODE_EXECUTABLE)
-  assert.equal(options.nodeExecutable, "node")
+  assert.equal(options.nodeExecutable, undefined)
   assert.deepEqual(options.include, {
     agents: true,
     commands: true,
@@ -52,14 +50,18 @@ test("tokenizes Node command text without splitting quoted arguments", () => {
   ])
 })
 
+test("keeps explicit Bun executable override", () => {
+  assert.equal(resolveOptions({ nodeExecutable: "bun" }).nodeExecutable, "bun")
+})
+
 test("accepts a non-empty Node command prefix array", () => {
   const configured = resolveOptions({ nodeExecutable: ["mise", "exec", "--", "node"] })
   assert.deepEqual(configured.nodeExecutable, ["mise", "exec", "--", "node"])
 })
 
-test("falls back to default for empty or malformed Node command text", () => {
+test("treats empty or malformed Node command text as automatic runtime selection", () => {
   for (const nodeExecutable of ["", "   ", 'mise "exec']) {
-    assert.equal(resolveOptions({ nodeExecutable }).nodeExecutable, DEFAULT_NODE_EXECUTABLE)
+    assert.equal(resolveOptions({ nodeExecutable }).nodeExecutable, undefined)
   }
 })
 

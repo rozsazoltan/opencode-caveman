@@ -62,7 +62,6 @@ Optional object form:
       "options": {
         "upstreamRange": "^2.7.0",
         "upstreamRepository": "JuliusBrussee/caveman",
-        "nodeExecutable": "node",
         "include": {
           "agents": true,
           "commands": true,
@@ -78,7 +77,7 @@ Optional object form:
 
 `cacheDirectory` is optional and must be absolute. Default: `~/.cache/opencode/.caveman/`.
 
-`nodeExecutable` selects command used to launch cached MCP entrypoint. Default: `node`. Simple strings such as `node` name one executable. Strings with whitespace are tokenized into argv; for example:
+`nodeExecutable` selects command used to launch cached MCP entrypoint. When omitted, plugin probes `node` first, then `bun`, and uses first available runtime. Probe is bounded and launches no shell. If neither runtime is available, only Caveman MCP registration is skipped; plugin hooks, rules, skills, and commands remain active. Set `nodeExecutable` to force a runtime or command prefix. Simple strings such as `node` name one executable. Strings with whitespace are tokenized into argv; for example:
 
 ```json
 "nodeExecutable": "mise exec -- node"
@@ -92,11 +91,11 @@ Use a non-empty string array to provide an executable and fixed arguments. Array
 "nodeExecutable": ["mise", "exec", "--", "node"]
 ```
 
-Both forms produce argv directly; no shell runs, and shell expansion does not occur. `mise` must be discoverable in the OpenCode server's `PATH`. OpenCode does not automatically source shell profiles such as `.bashrc`.
+Both forms produce argv directly; no shell runs, and shell expansion does not occur. Explicit values bypass runtime detection. `mise` must be discoverable in the OpenCode server's `PATH`. OpenCode does not automatically source shell profiles such as `.bashrc`.
 
 `include` independently controls upstream agents, commands, MCP, and skills. Every category defaults to `true`; only literal `false` disables a category. For example, set `"mcps": false` to disable only MCP registration. Disabling agents removes unchanged plugin-managed agent files and keeps modified files. `commands: false` also disables plugin management commands (`/caveman-upstream-status`, `/caveman-upstream-update`, and `/caveman-managed-clean`). Hooks and core rules remain active for every setting.
 
-When enabled, MCP registration adds local server `caveman` using Node to launch `mcp/bin/caveman-mcp.mjs` from the cached, immutable upstream release source. Registration is skipped with a diagnostic if launcher or generated installer files are missing. An existing `caveman` MCP server is preserved and never overwritten. No npm `caveman-mcp` dependency is used.
+When enabled, MCP registration adds local server `caveman` using the selected runtime to launch `mcp/bin/caveman-mcp.mjs` from the cached, immutable upstream release source. Runtime fallback checks availability and runtime identity only. Bun fallback was smoke-tested against upstream Caveman 2.7.0, but upstream declares a Node.js engine, so compatibility with other upstream versions is not guaranteed. Registration is skipped with a diagnostic if launcher or generated installer files are missing or neither runtime is available. An existing `caveman` MCP server is preserved and never overwritten. No npm `caveman-mcp` dependency is used.
 
 On first MCP start, upstream launcher downloads matching native binary, verifies signed checksum manifest and SHA-256, then caches binary under `~/.caveman/bin`. Native binary is licensed under BSL-1.1. MCP launcher and installer source come from the same resolved upstream commit as rest of integration.
 

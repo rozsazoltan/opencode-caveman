@@ -1,4 +1,4 @@
-export const DEFAULT_NODE_EXECUTABLE = "node"
+export const PREFERRED_NODE_EXECUTABLE = "node"
 export const DEFAULT_UPSTREAM_RANGE = "^2.7.0"
 export const DEFAULT_UPSTREAM_REPOSITORY = "JuliusBrussee/caveman"
 
@@ -15,7 +15,7 @@ export interface IncludeOptions {
 export interface ResolvedOptions {
   upstreamRange: string
   upstreamRepository: string
-  nodeExecutable: NodeExecutable
+  nodeExecutable?: NodeExecutable
   cacheDirectory?: string
   include: IncludeOptions
 }
@@ -104,7 +104,7 @@ export function resolveOptions(options: PluginOptions): ResolvedOptions {
   return {
     upstreamRange: stringOption(options, "upstreamRange") ?? DEFAULT_UPSTREAM_RANGE,
     upstreamRepository: stringOption(options, "upstreamRepository") ?? DEFAULT_UPSTREAM_REPOSITORY,
-    nodeExecutable: nodeExecutableOption(options) ?? DEFAULT_NODE_EXECUTABLE,
+    nodeExecutable: nodeExecutableOption(options),
     cacheDirectory: stringOption(options, "cacheDirectory"),
     include: includeOptions(options),
   }
