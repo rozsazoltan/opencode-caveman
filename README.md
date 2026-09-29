@@ -78,15 +78,21 @@ Optional object form:
 
 `cacheDirectory` is optional and must be absolute. Default: `~/.cache/opencode/.caveman/`.
 
-`nodeExecutable` selects executable used to launch cached MCP entrypoint. Default: `node`. A string is one executable; paths with spaces are not split. Set an absolute Node executable path when OpenCode service PATH cannot resolve Node.
+`nodeExecutable` selects command used to launch cached MCP entrypoint. Default: `node`. Simple strings such as `node` name one executable. Strings with whitespace are tokenized into argv; for example:
 
-Use a non-empty string array to provide an executable and fixed arguments:
+```json
+"nodeExecutable": "mise exec -- node"
+```
+
+Quotes group tokens, such as `mise exec -- "node path/bin/node"`. An unquoted string containing `/` or `\` remains one executable, preserving paths with spaces. Quote command text that includes paths or use an array to avoid ambiguity.
+
+Use a non-empty string array to provide an executable and fixed arguments. Arrays are most unambiguous:
 
 ```json
 "nodeExecutable": ["mise", "exec", "--", "node"]
 ```
 
-OpenCode launches this as `mise exec -- node <launcher>`. `mise` must be discoverable in the OpenCode server's `PATH`. OpenCode does not automatically source shell profiles such as `.bashrc`. No shell parsing is performed.
+Both forms produce argv directly; no shell runs, and shell expansion does not occur. `mise` must be discoverable in the OpenCode server's `PATH`. OpenCode does not automatically source shell profiles such as `.bashrc`.
 
 `include` independently controls upstream agents, commands, MCP, and skills. Every category defaults to `true`; only literal `false` disables a category. For example, set `"mcps": false` to disable only MCP registration. Disabling agents removes unchanged plugin-managed agent files and keeps modified files. `commands: false` also disables plugin management commands (`/caveman-upstream-status`, `/caveman-upstream-update`, and `/caveman-managed-clean`). Hooks and core rules remain active for every setting.
 

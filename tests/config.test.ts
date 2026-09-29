@@ -36,9 +36,31 @@ test("uses only configured overrides", () => {
   assert.equal(configured.cacheDirectory, "/tmp/caveman-cache")
 })
 
+test("tokenizes Node command text without splitting quoted arguments", () => {
+  assert.equal(resolveOptions({ nodeExecutable: "node" }).nodeExecutable, "node")
+  assert.deepEqual(resolveOptions({ nodeExecutable: "mise exec -- node" }).nodeExecutable, [
+    "mise",
+    "exec",
+    "--",
+    "node",
+  ])
+  assert.deepEqual(resolveOptions({ nodeExecutable: 'mise exec -- "node path/bin/node"' }).nodeExecutable, [
+    "mise",
+    "exec",
+    "--",
+    "node path/bin/node",
+  ])
+})
+
 test("accepts a non-empty Node command prefix array", () => {
   const configured = resolveOptions({ nodeExecutable: ["mise", "exec", "--", "node"] })
   assert.deepEqual(configured.nodeExecutable, ["mise", "exec", "--", "node"])
+})
+
+test("falls back to default for empty or malformed Node command text", () => {
+  for (const nodeExecutable of ["", "   ", 'mise "exec']) {
+    assert.equal(resolveOptions({ nodeExecutable }).nodeExecutable, DEFAULT_NODE_EXECUTABLE)
+  }
 })
 
 test("independently disables only categories set to false", () => {

@@ -25,10 +25,55 @@ function stringOption(options: PluginOptions, key: string): string | undefined {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined
 }
 
+function tokenizeCommandText(value: string): string[] | undefined {
+  const tokens: string[] = []
+  let token = ""
+  let tokenStarted = false
+  let quote: "'" | '"' | undefined
+
+  for (const character of value) {
+    if (quote !== undefined) {
+      if (character === quote) {
+        quote = undefined
+      } else {
+        token += character
+      }
+      tokenStarted = true
+      continue
+    }
+
+    if (character === "'" || character === '"') {
+      quote = character
+      tokenStarted = true
+    } else if (/\s/.test(character)) {
+      if (tokenStarted) {
+        tokens.push(token)
+        token = ""
+        tokenStarted = false
+      }
+    } else {
+      token += character
+      tokenStarted = true
+    }
+  }
+
+  if (quote !== undefined) return undefined
+  if (tokenStarted) tokens.push(token)
+  return tokens.length > 0 ? tokens : undefined
+}
+
 function nodeExecutableOption(options: PluginOptions): NodeExecutable | undefined {
   const value = options.nodeExecutable
   if (typeof value === "string") {
-    return value.trim().length > 0 ? value.trim() : undefined
+    const commandText = value.trim()
+    if (commandText.length === 0) return undefined
+
+    // Keep unquoted paths as one executable so spaces in path names remain intact.
+    if (!/["']/.test(commandText) && /[\\/]/.test(commandText)) return commandText
+
+    const tokens = tokenizeCommandText(commandText)
+    if (!tokens || tokens[0]!.trim().length === 0) return undefined
+    return tokens.length === 1 ? tokens[0]! : tokens
   }
   if (
     Array.isArray(value) &&
