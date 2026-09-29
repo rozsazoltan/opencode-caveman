@@ -16,7 +16,7 @@ async function installedTransforms(
   snapshot: RuntimeSnapshot = {} as RuntimeSnapshot,
   mcpServers?: Map<string, unknown>,
   diagnostic?: (message: string) => void,
-  nodeExecutable = "node",
+  nodeExecutable: string | string[] = "node",
 ): Promise<{ transforms: string[]; hooks: string[] }> {
   const transforms: string[] = []
   const hooks: string[] = []
@@ -98,11 +98,35 @@ test("uses configured Node executable for Caveman MCP", async () => {
     const servers = new Map<string, unknown>()
     const snapshot = { install: { root: upstreamRoot } } as RuntimeSnapshot
     const include: IncludeOptions = { agents: true, commands: true, mcps: true, skills: true }
-    await installedTransforms(include, snapshot, servers, undefined, "/opt/node/bin/node")
+    await installedTransforms(include, snapshot, servers, undefined, "/opt/node with spaces/bin/node")
 
     assert.deepEqual(servers.get("caveman"), {
       type: "local",
-      command: ["/opt/node/bin/node", join(upstreamRoot, "mcp", "bin", "caveman-mcp.mjs")],
+      command: ["/opt/node with spaces/bin/node", join(upstreamRoot, "mcp", "bin", "caveman-mcp.mjs")],
+    })
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true })
+  }
+})
+
+test("uses configured argv prefix for Caveman MCP", async () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), "opencode-caveman-mcp-"))
+  try {
+    const upstreamRoot = join(tempRoot, "versions", "2.7.0-0123456789abcdef")
+    const binDirectory = join(upstreamRoot, "mcp", "bin")
+    mkdirSync(binDirectory, { recursive: true })
+    writeFileSync(join(binDirectory, "caveman-mcp.mjs"), "")
+    writeFileSync(join(binDirectory, "binary-installer.generated.mjs"), "")
+    writeFileSync(join(binDirectory, "release.generated.mjs"), "")
+
+    const servers = new Map<string, unknown>()
+    const snapshot = { install: { root: upstreamRoot } } as RuntimeSnapshot
+    const include: IncludeOptions = { agents: true, commands: true, mcps: true, skills: true }
+    await installedTransforms(include, snapshot, servers, undefined, ["mise", "exec", "--", "node"])
+
+    assert.deepEqual(servers.get("caveman"), {
+      type: "local",
+      command: ["mise", "exec", "--", "node", join(upstreamRoot, "mcp", "bin", "caveman-mcp.mjs")],
     })
   } finally {
     rmSync(tempRoot, { recursive: true, force: true })

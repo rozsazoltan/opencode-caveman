@@ -4,7 +4,7 @@ import { join } from "node:path"
 import { renderCommand, type UpstreamCatalog } from "./catalog.ts"
 import type { UpstreamInstall } from "./upstream.ts"
 import type { AgentSyncResult } from "./agents.ts"
-import { DEFAULT_NODE_EXECUTABLE, type IncludeOptions } from "./config.ts"
+import { DEFAULT_NODE_EXECUTABLE, type IncludeOptions, type NodeExecutable } from "./config.ts"
 
 export type PluginContext = Parameters<NonNullable<Parameters<typeof Plugin.define>[0]["setup"]>>[0]
 
@@ -20,7 +20,7 @@ export interface RuntimeBridgeOptions {
   refresh: () => Promise<RuntimeSnapshot>
   cleanAgents: () => Promise<AgentSyncResult>
   include: IncludeOptions
-  nodeExecutable: string
+  nodeExecutable: NodeExecutable
   pluginVersion: string
   diagnostic?: (message: string) => void
 }
@@ -101,7 +101,7 @@ export function registerCavemanMcp(
   editor: McpEditor,
   upstreamRoot: string,
   diagnostic?: (message: string) => void,
-  nodeExecutable = DEFAULT_NODE_EXECUTABLE,
+  nodeExecutable: NodeExecutable = DEFAULT_NODE_EXECUTABLE,
 ): boolean {
   if (editor.get("caveman") !== undefined) return false
 
@@ -117,7 +117,8 @@ export function registerCavemanMcp(
     return false
   }
 
-  editor.set("caveman", { type: "local", command: [nodeExecutable, launcher] })
+  const nodeCommandPrefix = typeof nodeExecutable === "string" ? [nodeExecutable] : nodeExecutable
+  editor.set("caveman", { type: "local", command: [...nodeCommandPrefix, launcher] })
   return true
 }
 

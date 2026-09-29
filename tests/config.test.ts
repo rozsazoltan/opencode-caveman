@@ -27,13 +27,18 @@ test("uses only configured overrides", () => {
   const configured = resolveOptions({
     upstreamRange: "~2.8.0",
     upstreamRepository: "example/caveman",
-    nodeExecutable: "/opt/node/bin/node",
+    nodeExecutable: "/opt/node with spaces/bin/node",
     cacheDirectory: "/tmp/caveman-cache",
   })
   assert.equal(configured.upstreamRange, "~2.8.0")
   assert.equal(configured.upstreamRepository, "example/caveman")
-  assert.equal(configured.nodeExecutable, "/opt/node/bin/node")
+  assert.equal(configured.nodeExecutable, "/opt/node with spaces/bin/node")
   assert.equal(configured.cacheDirectory, "/tmp/caveman-cache")
+})
+
+test("accepts a non-empty Node command prefix array", () => {
+  const configured = resolveOptions({ nodeExecutable: ["mise", "exec", "--", "node"] })
+  assert.deepEqual(configured.nodeExecutable, ["mise", "exec", "--", "node"])
 })
 
 test("independently disables only categories set to false", () => {
