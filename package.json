@@ -1,0 +1,44 @@
+{
+  "name": "opencode-caveman",
+  "version": "0.1.0",
+  "description": "Zero-vendoring OpenCode V2 adapter that assembles Caveman from versioned upstream GitHub source at startup",
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "bun test tests",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rozsazoltan/opencode-caveman.git"
+  },
+  "bugs": {
+    "url": "https://github.com/rozsazoltan/opencode-caveman/issues"
+  },
+  "homepage": "https://github.com/rozsazoltan/opencode-caveman#readme",
+  "keywords": [
+    "opencode",
+    "plugin",
+    "caveman",
+    "tokens",
+    "compression"
+  ],
+  "license": "AGPL-3.0-only",
+  "dependencies": {
+    "@opencode/plugin": "2.0.4",
+    "semver": "7.8.5",
+    "tar": "7.5.22",
+    "yaml": "2.9.1"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.4",
+    "@types/semver": "7.8.0",
+    "typescript": "5.9.3"
+  }
+}
